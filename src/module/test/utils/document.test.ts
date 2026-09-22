@@ -395,6 +395,72 @@ Some text.
     expect(stored.seo).toEqual({ title: 'Hello', description: 'World' })
     expect(await areDocumentsEqual(stored, generated)).toBe(true)
   })
+
+  // The editor emits a block's default-slot content wrapped in an explicit default-slot
+  // template when the block also has named slots; the stored row keeps it as a bare leading
+  // child. The serializer drops a leading default marker, so both write the same markdown.
+  describe('explicit default slot', () => {
+    const namedSlots = [
+      ['template', { name: 'title' }, ['p', {}, 'Heading']],
+      ['template', { name: 'description' }, ['p', {}, 'Lead text']],
+    ]
+    const cards = ['card-list', { ':items': '[]' }]
+    const base = {
+      id: 'content:index.md',
+      path: '/index',
+      title: 'Test Document',
+      description: 'A test document',
+      extension: ContentFileExtension.Markdown,
+      stem: 'index',
+      seo: {},
+      meta: {},
+    }
+    const bare: DatabaseItem = {
+      ...base,
+      body: { nodes: [['section-block', {}, cards, ...namedSlots]], frontmatter: {}, meta: {} },
+    }
+    const wrapped: DatabaseItem = {
+      ...base,
+      body: { nodes: [['section-block', {}, ['template', { name: 'default' }, cards], ...namedSlots]], frontmatter: {}, meta: {} },
+    }
+
+    it('should return true when only one side wraps the leading default slot explicitly', async () => {
+      expect(await areDocumentsEqual(bare, wrapped)).toBe(true)
+      expect(await areDocumentsEqual(wrapped, bare)).toBe(true)
+    })
+
+    it('should return true for legacy minimark bodies that differ only by the leading default slot', async () => {
+      // What @nuxt/content stores today vs what a 1.x editor emitted — both upgraded by
+      // comarkTreeFromLegacyDocument, which maps `v-slot:default` to `{ name: 'default' }`.
+      const legacySlots = [['template', { 'v-slot:title': '' }, 'Heading'], ['template', { 'v-slot:description': '' }, 'Lead text']]
+      const legacyBare: DatabaseItem = {
+        ...base,
+        body: { type: 'minimark', value: [['section-block', {}, cards, ...legacySlots]] },
+      }
+      const legacyWrapped: DatabaseItem = {
+        ...base,
+        body: { type: 'minimark', value: [['section-block', {}, ['template', { 'v-slot:default': '' }, cards], ...legacySlots]] },
+      }
+      expect(await areDocumentsEqual(legacyBare, legacyWrapped)).toBe(true)
+      expect(await areDocumentsEqual(legacyWrapped, legacyBare)).toBe(true)
+    })
+
+    it('should still return false when the default slot template is not the leading child', async () => {
+      const trailing: DatabaseItem = {
+        ...base,
+        body: { nodes: [['section-block', {}, ...namedSlots, ['template', { name: 'default' }, cards]]], frontmatter: {}, meta: {} },
+      }
+      expect(await areDocumentsEqual(bare, trailing)).toBe(false)
+    })
+
+    it('should still return false when the default slot template carries attributes', async () => {
+      const withAttrs: DatabaseItem = {
+        ...base,
+        body: { nodes: [['section-block', {}, ['template', { name: 'default', class: 'wide' }, cards], ...namedSlots]], frontmatter: {}, meta: {} },
+      }
+      expect(await areDocumentsEqual(bare, withAttrs)).toBe(false)
+    })
+  })
 })
 
 describe('isDocumentMatchingContent', () => {

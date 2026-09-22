@@ -81,9 +81,12 @@ export async function areDocumentsEqual(document1: Record<string, unknown>, docu
   const { body: body1, meta: meta1, ...documentData1 } = document1
   const { body: body2, meta: meta2, ...documentData2 } = document2
 
-  // Compare body first
+  // Compare body first. Normalize like isDocumentMatchingContent does: the editor wraps a
+  // block's default-slot content in an explicit default template when the block also has named
+  // slots, while the stored row keeps it as a bare leading child — the serializer erases that
+  // marker, so both sides write the same markdown and must compare equal.
   if (document1.extension === ContentFileExtension.Markdown) {
-    if (await renderMarkdown(comarkBody(document1)) !== await renderMarkdown(comarkBody(document2))) {
+    if (await renderMarkdown(normalizeAttrsDeep(comarkBody(document1))) !== await renderMarkdown(normalizeAttrsDeep(comarkBody(document2)))) {
       return false
     }
   }
