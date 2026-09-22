@@ -100,13 +100,15 @@ export async function areDocumentsEqual(document1: Record<string, unknown>, docu
   }
 
   function refineDocumentData(doc: Record<string, unknown>) {
-    if (doc.seo) {
-      const seo = doc.seo as Record<string, unknown>
-      doc.seo = {
-        ...seo,
-        title: seo.title || doc.title,
-        description: seo.description || doc.description,
-      }
+    // @nuxt/content fills `seo` on every page-type row it stores (`seo.title ||= title`,
+    // `seo.description ||= description`), and applyCollectionSchema does the same on upsert,
+    // but documentFromContent never adds the key. Default it on both sides — an absent `seo`
+    // and the auto-filled one describe the same document; only an explicit override differs.
+    const seo = (doc.seo || {}) as Record<string, unknown>
+    doc.seo = {
+      ...seo,
+      title: seo.title || doc.title,
+      description: seo.description || doc.description,
     }
     // documents with same id are being compared, so it is safe to remove `path` and `__hash__`
     Reflect.deleteProperty(doc, '__hash__')

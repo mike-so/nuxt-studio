@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { applyCollectionSchema, areDocumentsEqual, isDocumentMatchingContent, sanitizeDocumentTree } from '../../src/runtime/utils/document'
+import { applyCollectionSchema, areDocumentsEqual, documentFromContent, isDocumentMatchingContent, sanitizeDocumentTree } from '../../src/runtime/utils/document'
 import { ContentFileExtension } from '../../src/types/content'
 import type { DatabaseItem } from 'nuxt-studio/app'
-import type { CollectionInfo } from '@nuxt/content'
+import type { CollectionInfo, CollectionItemBase } from '@nuxt/content'
 
 describe('areDocumentsEqual', () => {
   it('should return true for two identical markdown documents with diffrent hash', async () => {
@@ -297,6 +297,103 @@ describe('areDocumentsEqual', () => {
     }
 
     expect(await areDocumentsEqual(document1, document2)).toBe(true)
+  })
+
+  it('should return true when only the stored document carries the auto-filled seo', async () => {
+    // @nuxt/content fills `seo.title`/`seo.description` from the page's title/description on
+    // every page-type row it stores; the document the editor generates never has the key.
+    const stored: DatabaseItem = {
+      id: 'content:index.md',
+      path: '/index',
+      title: 'Test Document',
+      description: 'A test document',
+      extension: ContentFileExtension.Markdown,
+      stem: 'index',
+      seo: { title: 'Test Document', description: 'A test document' },
+      body: { nodes: [['p', {}, 'Hello World']], frontmatter: {}, meta: {} },
+      meta: {},
+    }
+    const generated: DatabaseItem = {
+      id: 'content:index.md',
+      path: '/index',
+      title: 'Test Document',
+      description: 'A test document',
+      extension: ContentFileExtension.Markdown,
+      stem: 'index',
+      body: { nodes: [['p', {}, 'Hello World']], frontmatter: {}, meta: {} },
+      meta: {},
+    }
+
+    expect(await areDocumentsEqual(stored, generated)).toBe(true)
+    expect(await areDocumentsEqual(generated, stored)).toBe(true)
+  })
+
+  it('should return false when the stored seo overrides the title', async () => {
+    const stored: DatabaseItem = {
+      id: 'content:index.md',
+      path: '/index',
+      title: 'Test Document',
+      description: 'A test document',
+      extension: ContentFileExtension.Markdown,
+      stem: 'index',
+      seo: { title: 'A custom SEO title', description: 'A test document' },
+      body: { nodes: [['p', {}, 'Hello World']], frontmatter: {}, meta: {} },
+      meta: {},
+    }
+    const generated: DatabaseItem = {
+      id: 'content:index.md',
+      path: '/index',
+      title: 'Test Document',
+      description: 'A test document',
+      extension: ContentFileExtension.Markdown,
+      stem: 'index',
+      body: { nodes: [['p', {}, 'Hello World']], frontmatter: {}, meta: {} },
+      meta: {},
+    }
+
+    expect(await areDocumentsEqual(stored, generated)).toBe(false)
+  })
+
+  it('should return true for a generated document and the row applyCollectionSchema stores for it', async () => {
+    const pageCollection = {
+      type: 'page',
+      name: 'docs',
+      schema: {
+        definitions: {
+          docs: {
+            properties: {
+              id: { type: 'string' },
+              title: { type: 'string' },
+              body: { type: 'object' },
+              description: { type: 'string' },
+              extension: { type: 'string' },
+              meta: { type: 'object' },
+              navigation: { type: 'boolean' },
+              path: { type: 'string' },
+              seo: { type: 'object' },
+              stem: { type: 'string' },
+            },
+          },
+        },
+      },
+    } as unknown as CollectionInfo
+
+    const markdownContent = `---
+title: Hello
+description: World
+---
+
+Some text.
+`
+
+    // What the editor produces from the file …
+    const generated = await documentFromContent('docs/index.md', markdownContent, { collectionType: 'page', compress: true }) as DatabaseItem
+    // … and what the database row for the same file looks like.
+    const stored = applyCollectionSchema('docs/index.md', pageCollection, generated as unknown as CollectionItemBase)
+
+    expect(generated).not.toHaveProperty('seo')
+    expect(stored.seo).toEqual({ title: 'Hello', description: 'World' })
+    expect(await areDocumentsEqual(stored, generated)).toBe(true)
   })
 })
 
